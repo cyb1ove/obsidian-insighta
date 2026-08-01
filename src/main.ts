@@ -4,6 +4,7 @@ import { DEFAULT_PROMPT_TEMPLATE } from 'src/template';
 import { ViewManager } from "src/view-manager";
 import { ChatGPT } from 'src/api';
 import { Embed } from 'src/embed';
+import { extractJsonArray, isPlainObject } from 'src/json-parse';
 
 enum InputMode {
 	SelectedText,
@@ -124,28 +125,36 @@ export default class InsightAPlugin extends Plugin {
 	}
 
 	private async fetchNotesFromApi(systemPrompt: string, userPrompt: string): Promise<any[]> {
-		let noteJsonString = await ChatGPT.callAPI(systemPrompt, userPrompt, this.settings.commandOption.llm_model);
-		noteJsonString = noteJsonString.replace(/```json/g, "").replace(/```/g, "");
-		noteJsonString = this.convertStringToJsonArray(noteJsonString);
-		console.log(`noteJsonString: ${noteJsonString}`);
-		let notesArray;
+		const response = await ChatGPT.callAPI(systemPrompt, userPrompt, this.settings.commandOption.llm_model);
+
+		let values: unknown[];
 		try {
-			notesArray = JSON.parse(noteJsonString);
+			values = extractJsonArray(response);
 		} catch (error) {
-			throw new Error("Invalid JSON format");
+			console.error(`${this.manifest.name}: no JSON in LLM response:\n${response}`);
+			throw error;
 		}
-		if (!Array.isArray(notesArray)) {
-			new Notice(`⛔ Returned JSON is not an array`);
-			return [notesArray];
+
+		const notes = values.filter(value => this.isNoteLike(value));
+		if (notes.length === 0) {
+			console.error(`${this.manifest.name}: no notes in LLM response:\n${response}`);
+			throw new Error("LLM response contains no notes");
 		}
-		return notesArray;
+		if (notes.length < values.length) {
+			console.warn(`${this.manifest.name}: skipped ${values.length - notes.length} malformed note(s)`);
+		}
+		return notes;
+	}
+
+	private isNoteLike(value: unknown): boolean {
+		return isPlainObject(value) && (typeof value.title === "string" || typeof value.body === "string");
 	}
 
 	private async createNotesFromArray(notesArray: any[], title: string) {
 		for (const note of notesArray) {
 			const tags = this.formatTags(note.tags);
 			const noteContent = this.buildNoteContent(note, title, tags);
-			const notePath = `${this.settings.commandOption.generated_notes_location}/${note.title}.md`;
+			const notePath = `${this.settings.commandOption.generated_notes_location}/${this.noteFileName(note)}.md`;
 			try {
 				await this.app.vault.create(notePath, noteContent);
 			} catch (error) {
@@ -155,20 +164,31 @@ export default class InsightAPlugin extends Plugin {
 		}
 	}
 
-	private formatTags(tags: string[]): string {
-		return tags.map(tag => tag.replace(/ /g, "_").replace("#", "")).join(', ');
+	// The model decides the file name, so strip what a vault path cannot contain.
+	private noteFileName(note: any): string {
+		const title = typeof note.title === "string" ? note.title.trim() : "";
+		return (title || "Untitled").replace(/[\\/:*?"<>|#^[\]]/g, "").slice(0, 100).trim() || "Untitled";
+	}
+
+	// Tags may come back missing, as a single comma separated string, or as an array.
+	private formatTags(tags: unknown): string {
+		const list = Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(",") : [];
+		return list
+			.map(tag => String(tag).trim().replace(/ /g, "_").replace(/#/g, ""))
+			.filter(tag => tag !== "")
+			.join(', ');
 	}
 
 	private buildNoteContent(note: any, title: string, tags: string): string {
 		let content = `---\nsource: "[[${title}]]"\ntags: ${tags}\n`;
-		if (note.properties) {
+		if (isPlainObject(note.properties)) {
 			for (const [key, value] of Object.entries(note.properties)) {
 				if (value !== null) {
 					content += `${key}: ${Array.isArray(value) ? JSON.stringify(value) : value}\n`;
 				}
 			}
 		}
-		content += `---\n${note.body}`;
+		content += `---\n${note.body ?? ""}`;
 		return content;
 	}
 
@@ -207,26 +227,4 @@ export default class InsightAPlugin extends Plugin {
 		return notice;
 	}
 
-	private convertStringToJsonArray(str: string): string {
-		try {
-			JSON.parse(str);
-			return str;
-		} catch (error) {}
-
-		let parts = str.split('}').filter(part => part.trim() !== '');
-		let jsonParts = parts.map(part => {
-			try {
-				return JSON.parse(part + '}');
-			} catch (error) {
-				throw new Error("Invalid JSON format");
-			}
-		});
-
-		try {
-			return JSON.stringify(jsonParts);
-		} catch (error) {
-			new Notice("⛔ Invalid return result from LLM");
-			throw new Error("Invalid JSON format");
-		}
-	}
 }
