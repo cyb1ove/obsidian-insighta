@@ -171,20 +171,26 @@ export default class InsightAPlugin extends Plugin {
 	}
 
 	// Tags may come back missing, as a single comma separated string, or as an array.
-	private formatTags(tags: unknown): string {
+	// Anything a tag cannot contain is dropped, so nothing can leak into the YAML.
+	private formatTags(tags: unknown): string[] {
 		const list = Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(",") : [];
-		return list
-			.map(tag => String(tag).trim().replace(/ /g, "_").replace(/#/g, ""))
-			.filter(tag => tag !== "")
-			.join(', ');
+		const cleaned = list
+			.map(tag => String(tag).trim().replace(/\s+/g, "_").replace(/[^\p{L}\p{N}_\-/]/gu, ""))
+			.filter(tag => tag !== "");
+		return [...new Set(cleaned)];
 	}
 
-	private buildNoteContent(note: any, title: string, tags: string): string {
-		let content = `---\nsource: "[[${title}]]"\ntags: ${tags}\n`;
+	private buildNoteContent(note: any, title: string, tags: string[]): string {
+		// Tags have to be a YAML list: "tags: a, b" is one tag named "a, b".
+		let content = `---\nsource: "[[${title}]]"\n`;
+		if (tags.length > 0) {
+			content += `tags:\n${tags.map(tag => `  - ${tag}\n`).join("")}`;
+		}
 		if (isPlainObject(note.properties)) {
 			for (const [key, value] of Object.entries(note.properties)) {
 				if (value !== null) {
-					content += `${key}: ${Array.isArray(value) ? JSON.stringify(value) : value}\n`;
+					// JSON is valid YAML, and it quotes what would otherwise break the block.
+					content += `${key}: ${JSON.stringify(value)}\n`;
 				}
 			}
 		}
