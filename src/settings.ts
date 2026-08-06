@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS: InsightASettings = {
         system_role: DEFAULT_CHAT_ROLE,
         prompt_template: DEFAULT_PROMPT_TEMPLATE,
         generated_notes_location: "Notes/",
-        llm_model: "gpt-4o-mini",
+        llm_model: "gpt-5.6-luna",
         embedding_location: "Embeddings/",
         source_notes_location: "Cards/",
         similar_threshold: 0.76,
@@ -129,8 +129,13 @@ export class InsightASettingTab extends PluginSettingTab {
     createLLMModelSetting(containerEl: HTMLElement): void {
         const commandOption = this.plugin.settings.commandOption;
         const availableModels = [
-            { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
-            { value: 'gpt-4o', label: 'gpt-4o' },
+            { value: 'gpt-5.6-luna', label: 'gpt-5.6-luna (fastest, cheapest)' },
+            { value: 'gpt-5.6-terra', label: 'gpt-5.6-terra (balanced)' },
+            { value: 'gpt-5.6-sol', label: 'gpt-5.6-sol (most capable)' },
+            { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+            { value: 'gpt-4.1-mini', label: 'gpt-4.1-mini' },
+            { value: 'gpt-4o-mini', label: 'gpt-4o-mini (legacy)' },
+            { value: 'gpt-4o', label: 'gpt-4o (legacy)' },
             { value: 'glm-4-flash', label: 'glm-4-flash' },
             { value: 'glm-4-plus', label: 'glm-4-plus' },
             { value: 'llama-2', label: 'llama-2' },

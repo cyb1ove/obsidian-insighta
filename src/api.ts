@@ -19,6 +19,11 @@ interface ModelConfig {
 
 class APIService {
 	private static modelMapping: { [key: string]: string } = {
+		"gpt-5.6-luna": "openai",
+		"gpt-5.6-terra": "openai",
+		"gpt-5.6-sol": "openai",
+		"gpt-5-mini": "openai",
+		"gpt-4.1-mini": "openai",
 		"gpt-4o-mini": "openai",
 		"gpt-4o": "openai",
 		"glm-4-flash": "glm",
@@ -94,18 +99,30 @@ export class ChatGPT {
 		};
 	}
 
+	// Reasoning models (GPT-5 family, o-series) reject the sampling parameters
+	// with "Unsupported parameter", so they are only sent to models that take them.
+	// The "-chat" variants are not reasoning models and keep them.
+	private static supportsSampling(model: string): boolean {
+		return !/^(gpt-5|o[1-9])/.test(model) || model.includes("-chat");
+	}
+
 	private static buildChatRequestBody(params: APIRequestParams): string {
-		return JSON.stringify({
+		const body: Record<string, unknown> = {
 			model: params.model,
 			messages: [
 				{ "role": "system", "content": params.systemRole ?? "" },
 				{ "role": "user", "content": params.userPrompt ?? "" },
 			],
-			temperature: params.temperature ?? 0,
-			top_p: params.topP ?? 0.95,
-			frequency_penalty: params.frequencyPenalty ?? 0,
-			presence_penalty: params.presencePenalty ?? 0.5
-		});
+		};
+
+		if (this.supportsSampling(params.model)) {
+			body.temperature = params.temperature ?? 0;
+			body.top_p = params.topP ?? 0.95;
+			body.frequency_penalty = params.frequencyPenalty ?? 0;
+			body.presence_penalty = params.presencePenalty ?? 0.5;
+		}
+
+		return JSON.stringify(body);
 	}
 
 	private static buildEmbeddingRequestBody(params: APIRequestParams): string {
